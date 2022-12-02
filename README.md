@@ -4,6 +4,11 @@ This repository contains the source code of the paper, Online Knowledge distilla
 
 
 
+## TODO
+
+Upload pretrained weights (WIP)
+Upload inference.py (WIP)
+
 
 
 ## Environment
@@ -13,6 +18,7 @@ Install the required packages using
 `pip install -r requirements.txt`
 
 Alternatively, use the Dockerfile provided.
+
 
 
 ## Preparing Data
@@ -42,6 +48,7 @@ For training our model, change 'data_path' argument and run
 `python train_nyu_ours.py`
 
 
+
 ## Pretrained models
 Single models
 [Segmentation]()
@@ -55,6 +62,7 @@ MTL model:
 
 For inference of our MTL model, run
 `python inference.py`
+
 
 
 ## Acknowledgement
