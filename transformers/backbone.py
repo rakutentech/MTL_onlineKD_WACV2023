@@ -8,7 +8,7 @@ from model import config
 from util.basemodel import BaseModel
 from model.factory import create_model
 
-def build_model(dataset, args, weighting, tasks = None, random_distribution=None):
+def build_model(dataset, args, weighting=None, tasks = None, random_distribution=None):
     model = MTL_Vit(dataset=dataset, args=args, weighting=weighting, tasks = tasks, random_distribution=random_distribution)
     
 #     if model == 'DMTL':
@@ -56,43 +56,13 @@ class MTL_Vit(BaseModel):
         model_cfg["decoder"] = decoder_cfg
         model_cfg["normalization"] = args.normalization    
         model_cfg["n_cls"] = self.class_nb
-
-        ###################################### Single models #########################################
-        self.single_models = {}
-        orig_model_cfg = copy.deepcopy(model_cfg)
-        orig_args = copy.deepcopy(args)
-        if 'segmentation' in self.tasks:
-            args.tasks = ['seg']
-            args.weight = [1,0,0]
-            self.single_models['seg'] = create_model(model_cfg,args)
-        if 'depth' in self.tasks:
-            args.tasks = ['depth']
-            args.weight = [0,1,0]
-
-            self.single_models['depth'] = create_model(model_cfg,args)
-        if 'normal' in self.tasks:
-            args.tasks = ['sn']
-            args.weight = [0,0,1]
-            self.single_models['sn'] = create_model(model_cfg,args)
         self.args = args    
-        orig_args.tasks = self.tasks
-        self.model = create_model(orig_model_cfg,orig_args)
+        args.tasks = self.tasks
+        self.model = create_model(model_cfg,args)
        
-#         ch = [256, 512, 1024, 2048]       
-#         self.all_stages = ['conv', 'layer1_without_conv', 'layer2', 'layer3', 'layer4']
-#         self.backbone = ResnetDilated(resnet.__dict__['resnet50'](pretrained=True))
-#         self.decoders = nn.ModuleList([DeepLabHead(2048, self.num_out_channels[t]) for t in self.tasks])
         
     def forward(self, x):
-#         img_size  = x.size()[-2:]
         B, _, H, W = x.shape
-#         print(x.shape)
-#         x = self.backbone(x)
-#         self.rep = x
-#         if self.rep_detach:
-#             for tn in range(self.task_num):
-#                 self.rep_i[tn] = self.rep.detach().clone()
-#                 self.rep_i[tn].requires_grad = True
         out = [0 for _ in self.tasks]
         x = self.model.encoder.get_final_features(x)
         
@@ -111,7 +81,6 @@ class MTL_Vit(BaseModel):
                 
                 
         return out
-    
     def get_share_params(self):
         return self.backbone.parameters()
         

@@ -20,9 +20,7 @@ class Segmenter(nn.Module):
         self.patch_size = encoder.patch_size
         self.predictions = {}
         self.encoder = encoder
-        self.features = encoder.features
         self.stages = encoder.stages
-        self.weights = encoder.weights 
         self.decoder_seg = decoder_seg
         self.decoder_depth = decoder_depth
         self.decoder_sn = decoder_sn

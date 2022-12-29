@@ -128,6 +128,7 @@ def create_model(model_cfg,args):
     
     
     encoder = create_vit(model_cfg,args)
+    
     # create a single function for create decoder
     decoder_seg=[];decoder_depth=[]; decoder_sn=[]
     if 'segmentation' in args.tasks:

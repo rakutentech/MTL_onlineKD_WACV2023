@@ -84,15 +84,7 @@ class VisionTransformer(nn.Module):
           nn.AdaptiveAvgPool1d((1))
          )
         embed_dim_attention =192; num_heads_attention = 3
-        self.linear = nn.Linear(d_model, embed_dim_attention)
-        self.linear_layer = nn.Linear((self.patch_embed.num_patches+
-                                       len(args.tasks))*len(args.tasks)*embed_dim_attention,
-                                      embed_dim_attention)
-        self.linear_task = nn.Linear((self.patch_embed.num_patches+
-                                      len(args.tasks))*n_layers*embed_dim_attention, 
-                                     embed_dim_attention)
-#         self.sig = nn.Sigmoid()
-        
+
         # cls and pos tokens
         self.seg_cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
         self.depth_cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
@@ -105,26 +97,18 @@ class VisionTransformer(nn.Module):
         self.blocks = nn.ModuleList(
             [Block(d_model, n_heads, d_ff, dropout, dpr[i]) for i in range(n_layers)]
         )
-        self.features = nn.Sequential(self.blocks)
         self.stages = [Stage(d_model,self.blocks[i]) for i in range(n_layers)]
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, self.task_n_layers)]
       
         self.tasks = args.tasks
-#         self.attn = Attention(dim, heads, dropout)
-        self.weights = {}
-        for i in args.tasks:           
-            self.weights[i] = nn.Parameter(torch.rand(n_layers))
         # output head
         self.norm = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, n_cls)
-        self.norm1 = nn.LayerNorm(embed_dim_attention)
-        self.norm2 = nn.LayerNorm(embed_dim_attention)
         trunc_normal_(self.pos_embed, std=0.02)
         trunc_normal_(self.seg_cls_token, std=0.02)
         trunc_normal_(self.depth_cls_token, std=0.02)
         trunc_normal_(self.sn_cls_token, std=0.02)
         self.pre_logits = nn.Identity()
-#         self.uw = layer(device)
         self.apply(init_weights)
 
     @torch.jit.ignore
@@ -135,70 +119,6 @@ class VisionTransformer(nn.Module):
     def load_pretrained(self, checkpoint_path, prefix=""):
         load_weights(self, checkpoint_path, prefix)
 
-#     def forward(self, im, return_features=False):
-#         B, _, H, W = im.shape
-#         PS = self.patch_size
-        
-#         x_seg=[];x_depth=[]
-#         x = self.patch_embed(im)
-        
-#         if 'seg' in self.tasks: 
-#             seg_cls_token = self.seg_cls_token.expand(B, -1, -1)
-            
-#             x = torch.cat((seg_cls_token, x), dim=1)
-#         if 'depth' in self.tasks: 
-#             depth_cls_token = self.depth_cls_token.expand(B, -1, -1)
-#             x = torch.cat((depth_cls_token, x), dim=1)
-#         if 'sn' in self.tasks: 
-#             depth_cls_token = self.sn_cls_token.expand(B, -1, -1)
-#             x = torch.cat((depth_cls_token, x), dim=1)
-        
-#         pos_embed = self.pos_embed
-
-
-#         x = x + pos_embed
-#         x = self.dropout(x)
-#         features_seg=[]; features_depth=[];features_sn=[];total_features = []
-        
-#         x_seg = x;x_depth = x; x_sn = x
-#         i=0
-#         if 'seg' in self.tasks: 
-#             for blk in self.blocks:
-#                 x_seg = blk(x_seg) 
-#                 features_seg.append(x_seg)
-#                 i+=1
-            
-#             features = torch.stack(features_seg,dim=1) 
-#             features = self.linear(features.squeeze(-1)).squeeze(-1)  
-#             total_features.append(features)
-#         i=0  
-#         if 'depth' in self.tasks:
-            
-#             for blk in self.blocks:
-#                 x_depth = blk(x_depth) 
-#                 features_depth.append(x_depth)
-#                 i+=1
-            
-#             features = torch.stack(features_depth,dim=1) 
-#             features = self.linear(features.squeeze(-1)).squeeze(-1) 
-#             total_features.append(features)
-#         i=0  
-#         if 'sn' in self.tasks: 
-#             for blk in self.blocks:
-#                 x_depth = blk(x_depth) 
-#                 features_sn.append(x_sn)
-#                 i+=1
-            
-#             features = torch.stack(features_sn,dim=1) 
-#             features = self.linear(features.squeeze(-1)).squeeze(-1) 
-#             total_features.append(features)
-            
-
-
-#         x_seg = self.norm(x_seg)
-#         x_depth = self.norm(x_depth)
-#         x_sn = self.norm(x_sn)
-#         return x_seg, x_depth, x_sn
     
     def get_all_features(self, im): 
        
@@ -252,53 +172,7 @@ class VisionTransformer(nn.Module):
         
         return x
     
-    
-    
-    def return_layer_features(self, im):       
-        B, _, H, W = im.shape
-        PS = self.patch_size
-        x_seg=[];x_depth=[]
-        x = self.patch_embed(im)
-        if 'seg' in self.tasks: 
-            seg_cls_token = self.seg_cls_token.expand(B, -1, -1)          
-            x = torch.cat((seg_cls_token, x), dim=1)
-        if 'depth' in self.tasks: 
-            depth_cls_token = self.depth_cls_token.expand(B, -1, -1)
-            x = torch.cat((depth_cls_token, x), dim=1)
-        if 'sn' in self.tasks: 
-            depth_cls_token = self.depth_cls_token.expand(B, -1, -1)
-            x = torch.cat((depth_cls_token, x), dim=1)
-            
-        pos_embed = self.pos_embed
-        
-        x = x + pos_embed
-        x = self.dropout(x)
-        features_seg=[]; features_depth=[];features_sn=[];total_features = []
-        
-        x_seg = x;x_depth = x; x_sn = x
-        i=0
-        
-        if 'seg' in self.tasks: 
-            for blk in self.blocks:
-                x_seg = blk(x_seg)  
-                features_seg.append(x_seg)
-                i+=1
-        
-        if 'depth' in self.tasks: 
-           
-            for blk in self.blocks:
-                x_depth = blk(x_depth) 
-                features_depth.append(x_depth)
-               
-                i+=1 
-        if 'sn' in self.tasks: 
-            for blk in self.blocks:
-                x_sn = blk(x_sn) 
-                features_sn.append(x_sn)
-                i+=1
-#         print("segment feature shape inside vit.py",self.tasks,len(features_seg))
-        return features_seg, features_depth, features_sn
-    
+ 
     def get_next_features(self, x, index):     
         i=0
         for blk in self.blocks:
@@ -307,21 +181,6 @@ class VisionTransformer(nn.Module):
             i+=1
         return x
     
-    def decoder_attention(self, x,y):
-        weights={}
-        x, attention = self.crossattn(self.norm1(x), self.norm2(y), None) 
-        attention = nn.functional.softmax(attention.mean(dim=1)[0,:],dim=0)
-        if 'seg' in self.tasks:  
-            ind = self.tasks.index('seg')   
-            weights['seg'] = attention[ind,:]#[:,:,ind,:].mean(dim=1)[0,:]
-        if 'depth' in self.tasks:
-            ind = self.tasks.index('depth')     
-            weights['depth'] = attention[ind,:]#attention[:,:,ind,:].mean(dim=1)[0,:]
-        if 'sn' in self.tasks:
-            ind = self.tasks.index('sn')     
-            weights['sn'] = attention[ind,:]#attention[:,:,ind,:].mean(dim=1)[0,:]
-        return weights
-
 
     
     def get_attention_map(self, im, layer_id):

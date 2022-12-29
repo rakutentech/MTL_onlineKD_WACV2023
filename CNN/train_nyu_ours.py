@@ -6,7 +6,7 @@ import numpy as np
 import scipy.io as sio
 from backbone import build_model
 from utils import *
-
+import math
 from create_dataset import NYUv2
 
 sys.path.append('../utils')
@@ -17,7 +17,11 @@ import argparse
 torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
-
+def isnan(num):
+    if math.isnan(num):
+        return 10
+    else:
+        return min(num,10)
 class layer(torch.nn.Module):
     def __init__(self,num_layers):
         super(layer,self).__init__()
@@ -69,7 +73,7 @@ def parse_args():
     parser.add_argument('--data_root', default="/home/geethu.jacob/workspace_shared/MTL/DATA/RLW/NYU/", 
                         help='data root', type=str) 
     parser.add_argument('--gpu_id', default='0', help='gpu_id') 
-    parser.add_argument('--model', default='DMTL', type=str, help='DMTL, MTAN, Cross_Stitch')
+    parser.add_argument('--model', default='DMTL', type=str, help='DMTL, MTAN')
     parser.add_argument('--aug', action='store_true', default=False, help='data augmentation')
     parser.add_argument('--warmup', default=True, help='warmup')
     parser.add_argument('--weighting', default='OTW', type=str, help='EW, OTW')
@@ -81,7 +85,7 @@ def parse_args():
 params = parse_args()
 print(params)
 def save_checkpoint(state, is_best, checkpoint=params.out, filename='best.pth.tar'):
-    filepath = os.path.join(checkpoint, 'segnet_weight_{}_'.format(params.task) + filename)
+    filepath = os.path.join(checkpoint, 'MTLnet_model_{}_best.pth.tar'.format(params.model))
     torch.save(state, filepath)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = params.gpu_id
@@ -90,7 +94,7 @@ if params.model in ['DMTL']:
     batch_size = 8
 elif params.model in ['DMTL', 'Cross_Stitch']:
     batch_size = 4
-elif params.model in ['MTAN', 'NDDRCNN']:
+elif params.model in ['MTAN']:
     batch_size = 4
     
 nyuv2_train_set = NYUv2(root=params.data_root, mode='trainval', augmentation=params.aug)
@@ -128,7 +132,7 @@ par = []
 for i in range(3):
     transformers[i] = transformer().cuda()
     par += transformers[i].parameters()
-    transformer_optimizer = optim.Adam(par, lr=1e-4, weight_decay=5e-4) 
+    
     single_model[tasks[i]] = build_model(dataset='NYUv2', model=params.model, 
                                 weighting=params.weighting, tasks=[tasks[i]]).cuda()
     single_optimizer[tasks[i]] = optim.Adam(single_model[tasks[i]].parameters(), lr=1e-4, weight_decay=1e-5)
@@ -165,12 +169,10 @@ if params.warmup==True:
                 loss.backward()
                 single_optimizer[tasks[i]].step()
                 
-
+transformer_optimizer = optim.Adam(par, lr=1e-4, weight_decay=5e-4) 
 optimizer = optim.Adam(opt+list(mtl.parameters()), lr=1e-4, weight_decay=1e-5)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
     
-# optimizer = optim.Adam(opt, lr=1e-4, weight_decay=1e-5)
-# scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
     
 print('LOSS FORMAT: SEMANTIC_LOSS MEAN_IOU PIX_ACC | DEPTH_LOSS ABS_ERR REL_ERR | NORMAL_LOSS MEAN MED <11.25 <22.5 <30')
 total_epoch = 200
@@ -184,10 +186,10 @@ lambda_weight = torch.ones([task_num, total_epoch]).cuda()
 dist_loss=None
 
 batch_weight = torch.ones(task_num).cuda()
-for epoch in range(total_epoch):
+for epoch in range(1,total_epoch):
     s_t = time.time()
     cost = torch.zeros(24)
-    T=1.0
+    T=0.1
     # iteration for all batches
     model.train()
     train_dataset = iter(nyuv2_train_loader)
@@ -199,19 +201,18 @@ for epoch in range(total_epoch):
             w_1 = min(avg_cost_MTL[epoch-1, 0] / avg_cost_single[epoch-1, 0],1)
             w_2 = min(avg_cost_MTL[epoch-1, 1] / avg_cost_single[epoch-1, 1],1)
             w_3 = min(avg_cost_MTL[epoch-1, 2] / avg_cost_single[epoch-1, 2],1)
-            print(w_1,w_2,w_3)
-
         else:
-            w_1 = min(avg_cost[epoch - 1, 0] / avg_cost_single[epoch-1, 0],1)
-            w_1 += avg_cost[epoch - 1, 0] / avg_cost[epoch - 2, 0]
-            w_2 = min(avg_cost[epoch - 1, 3] / avg_cost_single[epoch-1, 1],1)
-            w_2 += avg_cost[epoch - 1, 3] / avg_cost[epoch - 2, 3]
-            w_3 = min(avg_cost[epoch - 1, 6] / avg_cost_single[epoch-1, 2],1)
-            w_3 += avg_cost[epoch - 1, 6] / avg_cost[epoch - 2, 6]
-            print(w_1,w_2,w_3)
-        lambda_weight[0, epoch] = task_num*np.exp(w_1 / T) / (np.exp(w_1 / T) + np.exp(w_2 / T) + np.exp(w_3 / T))
-        lambda_weight[1, epoch] = task_num*np.exp(w_2 / T) / (np.exp(w_1 / T) + np.exp(w_2 / T) + np.exp(w_3 / T))
-        lambda_weight[2, epoch] = task_num*np.exp(w_3 / T) / (np.exp(w_1 / T) + np.exp(w_2 / T) + np.exp(w_3 / T))
+            w_1 = avg_cost_MTL[epoch - 1, 0] / avg_cost_single[epoch-1, 0]
+            w_2 = avg_cost_MTL[epoch - 1, 1] / avg_cost_single[epoch-1, 1]
+            w_3 = avg_cost_MTL[epoch - 1, 2] / avg_cost_single[epoch-1, 2]
+            
+        
+        term1 = isnan(np.exp(w_1 / T));term2 = isnan(np.exp(w_2 / T));term3 = isnan(np.exp(w_3 / T))
+        
+        lambda_weight[0, epoch] = task_num*term1 / (term1 + term2 + term3)
+        lambda_weight[1, epoch] = task_num*term2 / (term1 + term2 + term3)
+        lambda_weight[2, epoch] = task_num*term3 / (term1 + term2 + term3)
+
     for batch_index in range(train_batch):
         train_data, train_label, train_depth, train_normal = train_dataset.next()
         train_data, train_label = train_data.cuda(non_blocking=True), train_label.long().cuda(non_blocking=True)
@@ -243,7 +244,8 @@ for epoch in range(total_epoch):
             for i in range(task_num):
                 batch_weight[i] = lambda_weight[i, epoch]
         loss = torch.sum(loss_train*batch_weight)
-        if params.AFD==True:  
+
+        if params.AFD:  
             dist_loss = []
             
             for i in range(task_num):
@@ -303,6 +305,9 @@ for epoch in range(total_epoch):
     if isbest:
         print(params)
         best_loss = loss_index
+        save_checkpoint({
+            'state_dict': model.state_dict()
+        }, isbest)
         model.eval()
         conf_mat = ConfMatrix(model.class_nb)
         with torch.no_grad():  # operations inside don't track history

@@ -9,7 +9,7 @@ from model.resnet import Bottleneck, conv1x1
 
 from util.basemodel import BaseModel
 
-def build_model(dataset, model, weighting, tasks = None, random_distribution=None):
+def build_model(dataset, model, weighting=None, tasks = None, random_distribution=None):
     if model == 'DMTL':
         model = DeepLabv3(dataset=dataset, weighting=weighting, tasks = tasks, random_distribution=random_distribution)
     elif model == 'MTAN':

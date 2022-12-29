@@ -48,7 +48,6 @@ class ConfMatrix(object):
 def depth_error(x_pred, x_output, dataset='NYUv2',mask=None):
     with torch.no_grad():
         device = x_pred.device
-        print(x_output.shape, x_pred.shape)
         binary_mask = (torch.sum(x_output, dim=1) != 0).unsqueeze(1).to(device)
         if mask is not None:
             binary_mask *= (mask.int() == 1)

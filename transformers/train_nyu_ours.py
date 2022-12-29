@@ -20,6 +20,13 @@ torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
 
+def isnan(num):
+    if math.isnan(num):
+        return 10
+    else:
+        return min(num,10)
+
+
 class layer(torch.nn.Module):
     def __init__(self,num_layers):
         super(layer,self).__init__()
@@ -42,26 +49,7 @@ class layer(torch.nn.Module):
         print("sigma1",torch.Tensor(self.sigma1))
         print("sigma2",torch.Tensor(self.sigma2))
         print("sigma3",torch.Tensor(self.sigma3))
-class transformer(torch.nn.Module):
-    def __init__(self):
-        super(transformer, self).__init__()
-        
-        self.conv1 = torch.nn.Linear(192,192)
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.xavier_normal_(m.weight)
 
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-
-    def forward(self, inputs):
-        results = []
-        for i in range(12):
-            results.append(self.conv1(inputs[i]))
-        return results
     
 def parse_args():
     parser = argparse.ArgumentParser(description= 'MTL for NYUv2')
@@ -80,9 +68,6 @@ def parse_args():
 
 params = parse_args()
 print(params)
-def save_checkpoint(state, is_best, checkpoint=params.out, filename='best.pth.tar'):
-    filepath = os.path.join(checkpoint, 'segnet_weight_{}_'.format(params.task) + filename)
-    torch.save(state, filepath)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = params.gpu_id
 
@@ -116,7 +101,6 @@ def save_checkpoint(state, is_best, checkpoint=params.out, filename='best.pth.ta
 
 single_model = {}
 single_optimizer = {}
-transformers = {}
 mtl = layer(12)    
 model = build_model(dataset='NYUv2', args=args, tasks=['segmentation','depth','normal'],
                     weighting=params.weighting).cuda()
@@ -128,8 +112,6 @@ tasks = model.tasks
 
 par = []
 for i in range(3):
-    transformers[i] = transformer().cuda()
-    par += transformers[i].parameters()
     single_model[tasks[i]] = build_model(dataset='NYUv2', args=args, tasks=[tasks[i]],
                                          weighting=params.weighting).cuda()
     
@@ -203,9 +185,10 @@ for epoch in range(total_epoch):
             w_2 = avg_cost_MTL[epoch - 1, 1] / avg_cost_single[epoch-1, 1]
             w_3 = avg_cost_MTL[epoch - 1, 2] / avg_cost_single[epoch-1, 2]
             print(w_1,w_2,w_3)
-        lambda_weight[0, epoch] = task_num*np.exp(w_1 / T) / (np.exp(w_1 / T) + np.exp(w_2 / T) + np.exp(w_3 / T))
-        lambda_weight[1, epoch] = task_num*np.exp(w_2 / T) / (np.exp(w_1 / T) + np.exp(w_2 / T) + np.exp(w_3 / T))
-        lambda_weight[2, epoch] = task_num*np.exp(w_3 / T) / (np.exp(w_1 / T) + np.exp(w_2 / T) + np.exp(w_3 / T))
+        term1 = isnan(np.exp(w_1 / T));term2 = isnan(np.exp(w_2 / T));term3 = isnan(np.exp(w_3 / T))
+        lambda_weight[0, epoch] = task_num*term1 / (term1 + term2 + term3)
+        lambda_weight[1, epoch] = task_num*term2 / (term1 + term2 + term3)
+        lambda_weight[2, epoch] = task_num*term3 / (term1 + term2 + term3)
     for batch_index in range(train_batch):
         train_data, train_label, train_depth, train_normal = train_dataset.next()
         train_data, train_label = train_data.cuda(non_blocking=True), train_label.long().cuda(non_blocking=True)
@@ -272,12 +255,14 @@ for epoch in range(total_epoch):
             
             loss+=dist_loss
         loss.backward()
-        single_loss = torch.sum(single_loss_train)
-        single_loss.backward()
+        if epoch<100:
+            single_loss = torch.sum(single_loss_train)
+            single_loss.backward()
+            for i in range(task_num):
+                single_optimizer[tasks[i]].step()
         optimizer.step()
         AFD_optimizer.step()
-        for i in range(task_num):
-            single_optimizer[tasks[i]].step()
+        
         conf_mat.update(train_pred[0].argmax(1).flatten(), train_label.flatten())
         cost[0] = train_loss[0].item()
         cost[3] = train_loss[1].item()
@@ -303,10 +288,7 @@ for epoch in range(total_epoch):
         print(params)
         best_loss = loss_index
         save_checkpoint({
-            'epoch': epoch + 1,
-            'state_dict': model.state_dict(),
-            'best_loss': best_loss,
-            'optimizer' : optimizer.state_dict(),
+            'state_dict': model.state_dict()
         }, isbest)
         model.eval()
         conf_mat = ConfMatrix(model.class_nb)
